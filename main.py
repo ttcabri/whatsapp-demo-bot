@@ -3,12 +3,12 @@ from fastapi.responses import PlainTextResponse
 
 from handlers.menu import send_main_menu
 from handlers.services import send_services, send_prices
-from handlers.booking import start_booking, handle_booking_step, is_in_booking
+from handlers.booking import start_booking, handle_booking_step, is_in_booking, clear_session
 from handlers.ai_chat import handle_question
+from services.whatsapp import send_message
 
 app = FastAPI(title="Lumina Beauty Studio WhatsApp Bot")
 
-# Keywords that trigger each menu section
 MENU_TRIGGERS = {
     "services": ["1", "our services", "services", "service"],
     "prices": ["2", "prices", "price", "price list", "how much"],
@@ -18,10 +18,12 @@ MENU_TRIGGERS = {
 
 GREETING_TRIGGERS = ["hi", "hello", "hey", "start", "hola", "привет", "aloha"]
 
+# Escape commands — cancel booking and return to menu
+ESCAPE_TRIGGERS = ["menu", "cancel", "stop", "back", "quit", "exit", "0"]
+
 
 @app.get("/webhook")
 async def verify():
-    """Twilio health check."""
     return PlainTextResponse("OK")
 
 
@@ -30,11 +32,16 @@ async def receive_message(
     Body: str = Form(default=""),
     From: str = Form(default=""),
 ):
-    """Receive incoming WhatsApp messages from Twilio."""
     text = Body.strip().lower()
     sender = From.strip()
 
     if not sender:
+        return Response(status_code=200)
+
+    # Escape commands — always work, even mid-booking
+    if text in ESCAPE_TRIGGERS:
+        clear_session(sender)
+        send_main_menu(sender)
         return Response(status_code=200)
 
     # If user is mid-booking flow, continue it
@@ -57,7 +64,6 @@ async def receive_message(
     elif text in MENU_TRIGGERS["question"]:
         handle_question(sender, Body.strip())
     else:
-        # Free-text → Claude AI
         handle_question(sender, Body.strip())
 
     return Response(status_code=200)
