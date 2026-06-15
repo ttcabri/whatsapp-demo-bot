@@ -81,6 +81,14 @@ def handle_booking_step(to: str, text: str) -> None:
         )
 
     elif step == "phone":
+        # Basic phone validation — must contain at least 7 digits
+        digits = ''.join(filter(str.isdigit, text))
+        if len(digits) < 7:
+            send_message(
+                to,
+                "Please enter a valid phone number (e.g. +31612345678) 📱"
+            )
+            return
         data["phone"] = text.strip()
         name = data["name"]
         service = data["service"]
