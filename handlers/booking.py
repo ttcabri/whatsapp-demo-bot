@@ -1,3 +1,4 @@
+import re
 from services.whatsapp import send_message
 from services.sheets import save_lead
 from services.notifications import send_telegram_notification
@@ -27,8 +28,21 @@ def start_booking(to: str) -> None:
     send_message(
         to,
         "Great! Let's book your appointment 📅\n\n"
-        "Step 1/4 — What's your name?",
+        "Step 1/4 — What's your name?\n\n"
+        "_Type *menu* anytime to go back to the main menu._",
     )
+
+
+def _is_valid_name(name: str) -> bool:
+    """Name must be at least 2 chars and contain only letters/spaces."""
+    name = name.strip()
+    return len(name) >= 2 and bool(re.match(r"^[A-Za-zÀ-ÿ\s\-']+$", name))
+
+
+def _is_valid_phone(text: str) -> bool:
+    """Must contain at least 7 digits."""
+    digits = ''.join(filter(str.isdigit, text))
+    return len(digits) >= 7
 
 
 def handle_booking_step(to: str, text: str) -> None:
@@ -41,7 +55,13 @@ def handle_booking_step(to: str, text: str) -> None:
     data = session["data"]
 
     if step == "name":
-        data["name"] = text.strip()
+        if not _is_valid_name(text):
+            send_message(
+                to,
+                "Please enter your real name (letters only, at least 2 characters) 😊"
+            )
+            return
+        data["name"] = text.strip().title()
         session["step"] = "service"
         options = "\n".join(f"{i+1}. {s}" for i, s in enumerate(SERVICE_OPTIONS))
         send_message(
@@ -53,13 +73,12 @@ def handle_booking_step(to: str, text: str) -> None:
         )
 
     elif step == "service":
-        # Accept number or name
         choice = text.strip()
         if choice.isdigit():
             idx = int(choice) - 1
             service = SERVICE_OPTIONS[idx] if 0 <= idx < len(SERVICE_OPTIONS) else choice
         else:
-            service = choice
+            service = choice.title()
         data["service"] = service
         session["step"] = "time"
         send_message(
@@ -77,16 +96,15 @@ def handle_booking_step(to: str, text: str) -> None:
         send_message(
             to,
             f"Step 4/4 — What's the best phone number or WhatsApp to reach you?\n\n"
-            f"_(You can also just reply with your current WhatsApp number)_",
+            f"Example: +31612345678",
         )
 
     elif step == "phone":
-        # Basic phone validation — must contain at least 7 digits
-        digits = ''.join(filter(str.isdigit, text))
-        if len(digits) < 7:
+        if not _is_valid_phone(text):
             send_message(
                 to,
-                "Please enter a valid phone number (e.g. +31612345678) 📱"
+                "Please enter a valid phone number (at least 7 digits) 📱\n\n"
+                "Example: +31612345678"
             )
             return
         data["phone"] = text.strip()
@@ -95,19 +113,16 @@ def handle_booking_step(to: str, text: str) -> None:
         preferred_time = data["preferred_time"]
         phone = data["phone"]
 
-        # Save to Google Sheets
         try:
             save_lead(name, service, preferred_time, phone)
         except Exception:
             pass
 
-        # Notify owner via Telegram
         try:
             send_telegram_notification(name, service, preferred_time, phone)
         except Exception:
             pass
 
-        # Clear session
         clear_session(to)
 
         send_message(
@@ -118,5 +133,6 @@ def handle_booking_step(to: str, text: str) -> None:
             f"🕐 Preferred time: {preferred_time}\n"
             f"📱 Contact: {phone}\n\n"
             f"We'll confirm your appointment within 2 hours. "
-            f"See you soon at Lumina Beauty Studio! 💆‍♀️",
+            f"See you soon at Lumina Beauty Studio! 💆‍♀️\n\n"
+            f"_Type *menu* to return to the main menu._",
         )
